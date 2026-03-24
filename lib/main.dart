@@ -13,6 +13,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    int doneCount = tasks.where((task) => task.done).length;
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
@@ -23,7 +24,7 @@ class MyApp extends StatelessWidget {
         children: [
           Text("Masz dzisiaj ${tasks.length} zadania"),
           SizedBox(height: 12),
-          Text("Zrobiono ${done} zadanie"),
+          Text("Zrobiono $doneCount zadanie"),
           SizedBox(height: 12),
           Text(
           "Dzisiejsze zadania",
@@ -37,7 +38,7 @@ class MyApp extends StatelessWidget {
           itemCount: tasks.length,
           itemBuilder: (context, index) {
           return TaskCard(title: tasks[index].title,
-          subtitle: tasks[index].deadline,
+          subtitle:"Termin: ${tasks[index].deadline} | Priorytet: ${tasks[index].priority}",
               icon:
               tasks[index].done ? Icons.check_circle : Icons.radio_button_unchecked);
           },
