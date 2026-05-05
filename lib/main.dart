@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'task_repository.dart';
+import '../services/task_api_service.dart';
 
 void main() {
   runApp(MyApp());
@@ -126,45 +127,58 @@ class _EkranGlownyState extends State<EkranGlowny> {
               ],
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: filteredTasks.length,
-                itemBuilder: (context, index) {
-                  final task = filteredTasks[index];
-                  return Dismissible(
-                    key: ValueKey(task.title),
-                    onDismissed: (direction) {
-                      setState(() {
-                        TaskRepository.tasks.remove(task);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Zadanie usunięte")),
-                      );
-                    },
-                    child: TaskCard(
-                      title: task.title,
-                      subtitle: "Termin: ${task.deadline} | Priorytet: ${task
-                          .priority}",
-                      done: task.done,
-                      onChanged: (value) {
-                        setState(() {
-                          task.done = value!;
-                        });
-                      },
-                      onTap: () async {
-                        final Task? updatedTask = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EditTaskScreen(task: task),
-                          ),
-                        );
-                        if (updatedTask != null) {
+              child: FutureBuilder<List<Task>>(
+                future: TaskApiService.fetchTasks(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text("Błąd: ${snapshot.error}"),
+                    );
+                  }
+                  final tasks = snapshot.data!;
+                  return ListView(
+                    children: tasks.map((task) {
+                      return Dismissible(
+                        key: ValueKey(task.title),
+                        onDismissed: (direction) {
                           setState(() {
-                            int i = TaskRepository.tasks.indexOf(task);
-                            TaskRepository.tasks[i] = updatedTask;
+                            tasks.remove(task);
                           });
-                        }
-                      },
-                    ),
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Zadanie usunięte")),
+                          );
+                        },
+                        child: TaskCard(
+                          title: task.title,
+                          subtitle: "Termin: ${task.deadline} | Priorytet: ${task.priority}",
+                          done: task.done,
+                          onChanged: (value) {
+                            setState(() {
+                              task.done = value!;
+                            });
+                          },
+                          onTap: () async {
+                            final Task? updatedTask = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EditTaskScreen(task: task),
+                              ),
+                            );
+                            if (updatedTask != null) {
+                              setState(() {
+                                int i = tasks.indexOf(task);
+                                tasks[i] = updatedTask;
+                              });
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
                   );
                 },
               ),
