@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
-import 'task_repository.dart';
-import '../services/task_api_service.dart';
+import 'models/task.dart';
+import 'services/task_local_database.dart';
+import 'services/task_sync_service.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'dart:math';
 
-void main() {
-  runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await Hive.openBox("tasks");
+  runApp(const MyApp());
 }
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -22,19 +27,22 @@ class EkranGlowny extends StatefulWidget {
 
 class _EkranGlownyState extends State<EkranGlowny> {
   String selectedFilter = "wszystkie";
+  late Future<List<Task>> tasksFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    tasksFuture = loadTasks();
+  }
+
+  Future<List<Task>> loadTasks() async {
+    await TaskSyncService.loadInitialDataIfNeeded();
+    return TaskLocalDatabase.getTasks();
+  }
 
   @override
   Widget build(BuildContext context) {
-    List<Task> filteredTasks = TaskRepository.tasks;
-    if (selectedFilter == "wykonane") {
-      filteredTasks = TaskRepository.tasks.where((task) => task.done).toList();
-    } else if (selectedFilter == "do zrobienia") {
-      filteredTasks = TaskRepository.tasks.where((task) => !task.done).toList();
-    }
 
-    int doneCount = TaskRepository.tasks
-        .where((task) => task.done)
-        .length;
     return Scaffold(
       appBar: AppBar(
         title: Text("KrakFlow"),
@@ -54,9 +62,10 @@ class _EkranGlownyState extends State<EkranGlowny> {
                         child: Text("Anuluj"),
                       ),
                       TextButton(
-                        onPressed: () {
+                        onPressed: () async {
+                          await TaskLocalDatabase.deleteAllTasks();
                           setState(() {
-                            TaskRepository.tasks.clear();
+                            tasksFuture = loadTasks();
                           });
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -76,10 +85,6 @@ class _EkranGlownyState extends State<EkranGlowny> {
       body: Center(
         child: Column(
           children: [
-            Text("Masz dzisiaj ${TaskRepository.tasks.length} zadania"),
-            SizedBox(height: 12),
-            Text("Zrobiono $doneCount zadanie"),
-            SizedBox(height: 12),
             Text(
               "Dzisiejsze zadania",
               style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
@@ -128,7 +133,7 @@ class _EkranGlownyState extends State<EkranGlowny> {
             ),
             Expanded(
               child: FutureBuilder<List<Task>>(
-                future: TaskApiService.fetchTasks(),
+                future: tasksFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return Center(
@@ -145,9 +150,10 @@ class _EkranGlownyState extends State<EkranGlowny> {
                     children: tasks.map((task) {
                       return Dismissible(
                         key: ValueKey(task.title),
-                        onDismissed: (direction) {
+                        onDismissed: (direction) async {
+                          await TaskLocalDatabase.deleteTask(task.id);
                           setState(() {
-                            tasks.remove(task);
+                            tasksFuture = loadTasks();
                           });
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text("Zadanie usunięte")),
@@ -157,9 +163,17 @@ class _EkranGlownyState extends State<EkranGlowny> {
                           title: task.title,
                           subtitle: "Termin: ${task.deadline} | Priorytet: ${task.priority}",
                           done: task.done,
-                          onChanged: (value) {
+                          onChanged: (value) async {
+                            final updatedTask = Task(
+                              id: task.id,
+                              title: task.title,
+                              deadline: task.deadline,
+                              priority: task.priority,
+                              done: value ?? false,
+                            );
+                            await TaskLocalDatabase.updateTask(updatedTask);
                             setState(() {
-                              task.done = value!;
+                              tasksFuture = loadTasks();
                             });
                           },
                           onTap: () async {
@@ -168,11 +182,10 @@ class _EkranGlownyState extends State<EkranGlowny> {
                               MaterialPageRoute(
                                 builder: (context) => EditTaskScreen(task: task),
                               ),
-                            );
-                            if (updatedTask != null) {
+                            );if (updatedTask != null) {
+                              await TaskLocalDatabase.updateTask(updatedTask);
                               setState(() {
-                                int i = tasks.indexOf(task);
-                                tasks[i] = updatedTask;
+                                tasksFuture = loadTasks();
                               });
                             }
                           },
@@ -193,8 +206,9 @@ class _EkranGlownyState extends State<EkranGlowny> {
             MaterialPageRoute(builder: (context) => AddTaskScreen()),
           );
           if (newTask != null) {
+            await TaskLocalDatabase.addTask(newTask);
             setState(() {
-              TaskRepository.tasks.add(newTask);
+              tasksFuture = loadTasks();
             });
           }
         },
@@ -244,6 +258,7 @@ class AddTaskScreen extends StatelessWidget {
               ElevatedButton(
                 onPressed: () {
                   final newTask = Task(
+                    id: Random().nextInt(1000000),
                     title: titleController.text,
                     deadline: deadlineController.text,
                     priority: priorityController.text,
@@ -304,6 +319,7 @@ class EditTaskScreen extends StatelessWidget {
               ElevatedButton(
                 onPressed: () {
                   final updatedTask = Task(
+                    id: task.id,
                     title: titleController.text,
                     deadline: deadlineController.text,
                     priority: priorityController.text,
@@ -332,6 +348,9 @@ class TaskCard extends StatelessWidget {
     this.onChanged,
     this.onTap,
   });
+
+
+
   @override
   Widget build(BuildContext context) {
     return Card(
